@@ -34,7 +34,7 @@ func Running() {
 	DaemonChanRX <- struct{}{}
 }
 func Stopping() {
-	proc.Process.Signal(syscall.SIGINT)
+	proc.Process.Signal(syscall.SIGTERM)
 	proc.Wait()
 	go Stopped()
 	DaemonChanRX <- struct{}{}

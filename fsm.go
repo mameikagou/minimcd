@@ -60,6 +60,7 @@ var waitChan chan struct{}
 
 // no we don't need cmdChan, we just make it work immediately
 func handleWaitingToRunning() {
+	GetLogger().Infof("Server is currently at %s state", stateToStr[RUNNING])
 	waitChan <- struct{}{}
 	_, ok := <-waitChan
 	if ok {
@@ -67,6 +68,7 @@ func handleWaitingToRunning() {
 	} //else it's too late
 }
 func handleRunningToWaiting() {
+	GetLogger().Infof("Server is currently at %s state", stateToStr[WAITING])
 	waitChan = make(chan struct{})
 	go waitingThread()
 	state = WAITING
@@ -74,6 +76,7 @@ func handleRunningToWaiting() {
 
 // TODO: work with daemon
 func handleWaitingToStopping() {
+	GetLogger().Infof("Server is currently at %s state", stateToStr[STOPPED])
 	go stoppingThread()
 	state = STOPPING
 }
@@ -83,6 +86,7 @@ func stoppingThread() {
 	handleStoppingToStopped()
 }
 func handleStoppingToStopped() {
+	GetLogger().Infof("Server is currently at %s state", stateToStr[STOPPED])
 	state = STOPPED
 }
 func bootingThread() {
@@ -94,10 +98,12 @@ func bootingThread() {
 var RunningChan = make(chan struct{})
 
 func handleBootingToRunning() {
+	GetLogger().Infof("Server is currently at %s state", stateToStr[RUNNING])
 	state = RUNNING
 	RunningChan <- struct{}{}
 }
 func handleStoppedToBooting() {
+	GetLogger().Infof("Server is currently at %s state", stateToStr[BOOTING])
 	go bootingThread()
 	state = BOOTING
 }

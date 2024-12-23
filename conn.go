@@ -4,6 +4,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	//"time"
 )
 
 func handle(client net.Conn) {
@@ -12,11 +13,12 @@ func handle(client net.Conn) {
 	ChanChan <- queryChan
 	proceed := func() {
 		server, err := net.Dial("tcp", "127.0.0.1:25565")
-		defer server.Close()
 		if err != nil {
 			GetLogger().Errorf("Failed to connect to MC server: %v", err)
 			return
 		}
+		// TODO:better way of setting connection timeout
+		defer server.Close()
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() {
@@ -64,7 +66,7 @@ func Listen() {
 			GetLogger().Errorf("ection error: %v", err)
 			continue
 		}
-
+		//conn.SetReadDeadline(time.Now().Add(time.Duration(config.ConnectTimeout) * time.Second))
 		GetLogger().Infof("New connection from %s", conn.RemoteAddr())
 		go handle(conn)
 	}

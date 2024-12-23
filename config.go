@@ -6,9 +6,10 @@ import (
 )
 
 type Config struct {
-	Timeout      int    `yaml:"timeout"` // minutes
-	StartCommand string `yaml:"start_command"`
-	Port         string `yaml:"port"`
+	Timeout        int    `yaml:"timeout"` // minutes
+	StartCommand   string `yaml:"start_command"`
+	Port           string `yaml:"port"`
+	ConnectTimeout int    `yaml:"connect_timeout"` //seconds
 }
 
 // this is a global constant since it's shared

@@ -4,11 +4,26 @@ import (
 	"io"
 	"net"
 	"sync"
-	//"time"
+	"time"
 )
 
-func handle(client net.Conn) {
-	defer client.Close()
+type timeoutConn struct{
+	conn net.Conn
+
+}
+func (c timeoutConn) Read(buf []byte) (int,error) {
+	c.conn.SetDeadline(time.Now().Add(time.Duration(config.ConnectTimeout)*time.Second))
+	return c.conn.Read(buf)
+}
+func (c timeoutConn) Write(buf []byte) (int,error) {
+	c.conn.SetDeadline(time.Now().Add(time.Duration(config.ConnectTimeout)*time.Second))
+	return c.conn.Write(buf)
+}
+
+
+func handle(clientOriginal net.Conn) {
+	client := timeoutConn{clientOriginal}
+	defer clientOriginal.Close()
 	queryChan := make(QueryChan)
 	ChanChan <- queryChan
 	proceed := func() {
@@ -37,7 +52,7 @@ func handle(client net.Conn) {
 		}()
 
 		wg.Wait()
-		GetLogger().Infof("Connection from %s closed", client.RemoteAddr())
+		GetLogger().Infof("Connection from %s closed", clientOriginal.RemoteAddr())
 	}
 	switch state {
 	case RUNNING:

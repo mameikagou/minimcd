@@ -2,11 +2,9 @@ package main
 
 import (
 	"gopkg.in/yaml.v2"
-	"io/ioutil"
-	"log"
+	"os"
 )
 
-// 配置结构体
 type Config struct {
 	Server struct {
 		Timeout      int    `yaml:"timeout"`
@@ -15,20 +13,19 @@ type Config struct {
 	} `yaml:"server"`
 }
 
-// 全局配置变量
+// this is a global constant since it's shared
 var config Config
 
-// 加载配置文件
-func loadConfig(filePath string) error {
-	data, err := ioutil.ReadFile(filePath)
+func LoadConfig(filePath string) error {
+	data, err := os.ReadFile(filePath)
 	if err != nil {
-		getLogger().Errorf("Failed to read config file: %v", err)
+		GetLogger().Fatalf("Failed to read config file: %v", err)
 		return err
 	}
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		getLogger().Errorf("Failed to unmarshal config: %v", err)
+		GetLogger().Fatalf("Failed to unmarshal config: %v", err)
 		return err
 	}
-	getLogger().Info("Configuration loaded successfully")
+	GetLogger().Info("Configuration loaded successfully")
 	return nil
 }

@@ -15,4 +15,7 @@ const (
 	BOOTING
 	WAITING
 	STOPPING
+	SIZE
 )
+
+var stateToStr = [SIZE]string{"STOPPED", "RUNNING", "BOOTING", "WAITING", "STOPPING"}

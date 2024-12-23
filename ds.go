@@ -19,7 +19,7 @@ func (s *Stack[T]) Pop() T {
 	if l == 0 {
 		panic("Stack: pop")
 	}
-	ret := s.items[l]
+	ret := s.items[l-1]
 	s.items = s.items[:l-1]
 	return ret
 }

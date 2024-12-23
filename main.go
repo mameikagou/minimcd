@@ -10,5 +10,7 @@ func main() {
 	if err := LoadConfig("config.yml"); err != nil {
 		os.Exit(1)
 	}
-
+	InitState()
+	go Stopped()
+	Listen()
 }

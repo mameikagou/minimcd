@@ -73,7 +73,34 @@ func handleRunningToWaiting() {
 }
 
 // TODO: work with daemon
-func handleWaitingToStopping() {}
+func handleWaitingToStopping() {
+	go stoppingThread()
+	state = STOPPING
+}
+func stoppingThread() {
+	DaemonChanTX <- struct{}{}
+	<-DaemonChanRX
+	handleStoppingToStopped()
+}
+func handleStoppingToStopped() {
+	state = STOPPED
+}
+func bootingThread() {
+	DaemonChanTX <- struct{}{}
+	<-DaemonChanRX
+	handleBootingToRunning()
+}
+
+var RunningChan = make(chan struct{})
+
+func handleBootingToRunning() {
+	state = RUNNING
+	RunningChan <- struct{}{}
+}
+func handleStoppedToBooting() {
+	go bootingThread()
+	state = BOOTING
+}
 func waitingThread() {
 	defer close(waitChan)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(config.Timeout)*time.Minute)
@@ -96,64 +123,98 @@ func handleState() { //goroutine only, handles both write and read
 		SIZE
 	)
 
-	selectCases := make([]reflect.SelectCase, SIZE)
-	selectCases[CHANCHAN] = reflect.SelectCase{
-		Dir:  reflect.SelectRecv, // readonly
-		Chan: reflect.ValueOf(ChanChan),
-	}
-	selectCases[EVENTCHAN] = reflect.SelectCase{
-		Dir:  reflect.SelectRecv, // readonly
-		Chan: reflect.ValueOf(eventChan),
-	}
+	selectCases := make([]reflect.SelectCase, 1)
+	//selectCases[CHANCHAN] = reflect.SelectCase{
+	//	Dir:  reflect.SelectRecv, // readonly
+	//	Chan: reflect.ValueOf(ChanChan),
+	//}
+	//selectCases[EVENTCHAN] = reflect.SelectCase{
+	//	Dir:  reflect.SelectRecv, // readonly
+	//	Chan: reflect.ValueOf(eventChan),
+	//}
 	//selectCases[CMDCHAN] = reflect.SelectCase{
 	//	Dir:  reflect.SelectRecv,
 	//	Chan: reflect.ValueOf(cmdChan),
 	//}
+	packagedChan := make(QueryChan)
+	selectCases[0] = reflect.SelectCase{
+		Dir:  reflect.SelectRecv,
+		Chan: reflect.ValueOf(packagedChan),
+	}
 	addChan := func(Chan QueryChan) {
-		logger.Debug("handleState():adding new chanchan")
+		logger.Debug("addChan(): adding new chan from chanchan")
 		nelem := reflect.SelectCase{
-			Dir:  reflect.SelectDefault,
+			Dir:  reflect.SelectRecv,
 			Chan: reflect.ValueOf(Chan),
 		}
+		logger.Debug("addChan(): done")
 		if unused.IsEmpty() {
 			selectCases = append(selectCases, nelem)
 		} else {
 			selectCases[unused.Pop()] = nelem
 		}
 	}
+	const SIGNAL = 114514
+	queryThread := func() {
+		prevId := -1
+		for {
+			id, recv, ok := reflect.Select(selectCases)
+			logger.Debugf("queryThread(): recv message from No.%d", id)
+			if prevId != -1 {
+				logger.Debug("queryThread(): clearing previous")
+				selectCases[prevId].Dir = reflect.SelectRecv
+				selectCases[prevId].Send = reflect.Value{}
+				prevId = -1
+			}
+			if !ok {
+				unused.Push(id)
+				continue
+			}
+			if id != 0 {
+				packagedChan <- MCState(recv.Int())
+				state, _ := <-packagedChan
+				selectCases[id].Dir = reflect.SelectSend
+				selectCases[id].Send = reflect.ValueOf(state)
+				prevId = id
+			}
+
+		}
+	}
+	go queryThread()
 	logger.Debug("handleState(): ready")
 	for {
-		id, recv, ok := reflect.Select(selectCases)
-		if !ok {
-			unused.Push(id)
-			continue
-		}
-		switch id {
-		case CHANCHAN:
-			nchan := *(*QueryChan)(recv.UnsafePointer())
+		select {
+		case nchan, _ := <-ChanChan:
 			addChan(nchan)
-		case EVENTCHAN:
+			packagedChan <- SIGNAL
+			//selectCases[id].Dir = reflect.SelectSend
+			//selectCases[id].Send = reflect.ValueOf(make(QueryChan))
+			//prevId = id
+		case event, _ := <-eventChan:
 			// wait until transformation finishes
-			event := globalConnEvent(recv.Int())
 			switch event {
 			case INCOMING:
 				switch state {
 				case STOPPED:
+					handleStoppedToBooting()
 				// case STOPPING: // it shouldn't be there, too, should be handled with conn.go
+				// case BOOTING: //shouldn't be there too
 				case WAITING:
 					handleWaitingToRunning()
 				default:
-					panic("handleState():written wrong!")
+					panic("handleState():written wrong!" + stateToStr[state])
 				}
 			case EMPTY:
 				switch state {
 				case RUNNING:
 					handleRunningToWaiting()
+				case BOOTING:
 				default:
-					panic("handleState():written wrong!")
+					panic("handleState():written wrong!" + stateToStr[state])
 				}
 			}
-		default:
+		case <-packagedChan:
+			packagedChan <- state
 		}
 	}
 

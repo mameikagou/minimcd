@@ -76,7 +76,7 @@ func handleRunningToWaiting() {
 
 // TODO: work with daemon
 func handleWaitingToStopping() {
-	GetLogger().Infof("Server is currently at %s state", stateToStr[STOPPED])
+	GetLogger().Infof("Server is currently at %s state", stateToStr[STOPPING])
 	go stoppingThread()
 	state = STOPPING
 }

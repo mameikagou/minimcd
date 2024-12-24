@@ -8,8 +8,6 @@ import (
 )
 
 var proc *exec.Cmd
-var DaemonChanRX = make(chan struct{})
-var DaemonChanTX = make(chan struct{})
 
 func Stopped() {
 	<-DaemonChanTX
@@ -34,7 +32,8 @@ func Running() {
 	DaemonChanRX <- struct{}{}
 }
 func Stopping() {
-	proc.Process.Signal(syscall.SIGTERM)
+	proc.Process.Signal(syscall.SIGINT)
+
 	proc.Wait()
 	go Stopped()
 	DaemonChanRX <- struct{}{}

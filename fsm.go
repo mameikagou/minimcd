@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"reflect"
 	"runtime/debug"
 	"time"
 )
@@ -15,16 +14,11 @@ const (
 )
 
 // luckily I use int for them all
-type GenericChan chan int
-type QueryChan chan MCState
-
 var (
 	state MCState = STOPPED
 	// we don't need mutex for cnt because with channel it's guaranteed to be processed sequently
-	CntChan   = make(chan CntEvent)
-	eventChan = make(chan globalConnEvent)
+	globalConnEventChan = make(chan globalConnEvent)
 	// the channel used to pass channel to build directional communication
-	ChanChan = make(chan QueryChan)
 )
 var cnt int
 
@@ -40,7 +34,7 @@ func handleCnt() { //goroutine only, handles cnt related message
 			GetLogger().Debug("handleCnt(): connection cnt increased")
 			cnt++
 			if cnt == 1 { //which means it is 0->1
-				eventChan <- INCOMING
+				globalConnEventChan <- INCOMING
 			}
 		case DECREASE:
 			GetLogger().Debug("handleCnt(): connection cnt decreased")
@@ -49,7 +43,7 @@ func handleCnt() { //goroutine only, handles cnt related message
 				debug.Stack()
 				panic("cnt processor was written wrong!")
 			} else if cnt == 0 {
-				eventChan <- EMPTY
+				globalConnEventChan <- EMPTY
 			}
 		}
 	}
@@ -83,6 +77,7 @@ func handleWaitingToStopping() {
 func stoppingThread() {
 	DaemonChanTX <- struct{}{}
 	<-DaemonChanRX
+	<-DaemonChanRX
 	handleStoppingToStopped()
 }
 func handleStoppingToStopped() {
@@ -92,15 +87,14 @@ func handleStoppingToStopped() {
 func bootingThread() {
 	DaemonChanTX <- struct{}{}
 	<-DaemonChanRX
+	<-DaemonChanRX
 	handleBootingToRunning()
 }
-
-var RunningChan = make(chan struct{})
 
 func handleBootingToRunning() {
 	GetLogger().Infof("Server is currently at %s state", stateToStr[RUNNING])
 	state = RUNNING
-	RunningChan <- struct{}{}
+	CriticalSignalChan <- RUNNING
 }
 func handleStoppedToBooting() {
 	GetLogger().Infof("Server is currently at %s state", stateToStr[BOOTING])
@@ -121,82 +115,84 @@ func waitingThread() {
 	}
 }
 func handleState() { //goroutine only, handles both write and read
-	unused := NewStack[int]()
-	const (
-		// CMD must come first
-		CHANCHAN = iota
-		EVENTCHAN
-		SIZE
-	)
+	// unused := NewStack[int]()
+	// const (
+	// 	// CMD must come first
+	// 	CHANCHAN = iota
+	// 	EVENTCHAN
+	// 	SIZE
+	// )
 
-	selectCases := make([]reflect.SelectCase, 1)
+	// selectCases := make([]reflect.SelectCase, 1)
 	//selectCases[CHANCHAN] = reflect.SelectCase{
 	//	Dir:  reflect.SelectRecv, // readonly
-	//	Chan: reflect.ValueOf(ChanChan),
+	//	Chan: reflect.ValueOf(QueryChanChan),
 	//}
 	//selectCases[EVENTCHAN] = reflect.SelectCase{
 	//	Dir:  reflect.SelectRecv, // readonly
-	//	Chan: reflect.ValueOf(eventChan),
+	//	Chan: reflect.ValueOf(globalConnEventChan),
 	//}
 	//selectCases[CMDCHAN] = reflect.SelectCase{
 	//	Dir:  reflect.SelectRecv,
 	//	Chan: reflect.ValueOf(cmdChan),
 	//}
-	packagedChan := make(QueryChan)
-	selectCases[0] = reflect.SelectCase{
-		Dir:  reflect.SelectRecv,
-		Chan: reflect.ValueOf(packagedChan),
-	}
-	addChan := func(Chan QueryChan) {
-		logger.Debug("addChan(): adding new chan from chanchan")
-		nelem := reflect.SelectCase{
-			Dir:  reflect.SelectRecv,
-			Chan: reflect.ValueOf(Chan),
-		}
-		logger.Debug("addChan(): done")
-		if unused.IsEmpty() {
-			selectCases = append(selectCases, nelem)
-		} else {
-			selectCases[unused.Pop()] = nelem
-		}
-	}
-	const SIGNAL = 114514
-	queryThread := func() {
-		prevId := -1
-		for {
-			id, recv, ok := reflect.Select(selectCases)
-			logger.Debugf("queryThread(): recv message from No.%d", id)
-			if prevId != -1 {
-				logger.Debug("queryThread(): clearing previous")
-				selectCases[prevId].Dir = reflect.SelectRecv
-				selectCases[prevId].Send = reflect.Value{}
-				prevId = -1
-			}
-			if !ok {
-				unused.Push(id)
-				continue
-			}
-			if id != 0 {
-				packagedChan <- MCState(recv.Int())
-				state, _ := <-packagedChan
-				selectCases[id].Dir = reflect.SelectSend
-				selectCases[id].Send = reflect.ValueOf(state)
-				prevId = id
-			}
+	// packagedChan := make(QueryChan)
+	// selectCases[0] = reflect.SelectCase{
+	// 	Dir:  reflect.SelectRecv,
+	// 	Chan: reflect.ValueOf(packagedChan),
+	// }
+	// addChan := func(Chan QueryChan) {
+	// 	logger.Debug("addChan(): adding new chan from chanchan")
+	// 	nelem := reflect.SelectCase{
+	// 		Dir:  reflect.SelectRecv,
+	// 		Chan: reflect.ValueOf(Chan),
+	// 	}
+	// 	logger.Debug("addChan(): done")
+	// 	if unused.IsEmpty() {
+	// 		selectCases = append(selectCases, nelem)
+	// 	} else {
+	// 		selectCases[unused.Pop()] = nelem
+	// 	}
+	// }
+	// const SIGNAL = 114514
+	// queryThread := func() {
+	// 	prevId := -1
+	// 	for {
+	// 		id, recv, ok := reflect.Select(selectCases)
+	// 		logger.Debugf("queryThread(): recv message from No.%d", id)
+	// 		if prevId != -1 {
+	// 			logger.Debug("queryThread(): clearing previous")
+	// 			selectCases[prevId].Dir = reflect.SelectRecv
+	// 			selectCases[prevId].Send = reflect.Value{}
+	// 			prevId = -1
+	// 		}
+	// 		if !ok {
+	// 			unused.Push(id)
+	// 			continue
+	// 		}
+	// 		if id != 0 {
+	// 			packagedChan <- MCState(recv.Int())
+	// 			state, _ := <-packagedChan
+	// 			selectCases[id].Dir = reflect.SelectSend
+	// 			selectCases[id].Send = reflect.ValueOf(state)
+	// 			prevId = id
+	// 		}
 
-		}
-	}
-	go queryThread()
+	// 	}
+	// }
+	// go queryThread()
 	logger.Debug("handleState(): ready")
+	multiChan := NewDynamicMultiChan[MCState](true)
 	for {
 		select {
-		case nchan, _ := <-ChanChan:
-			addChan(nchan)
-			packagedChan <- SIGNAL
+		case nchan, _ := <-QueryChanChan:
+			multiChan.Add(nchan)
+			//addChan(nchan)
+			// packagedChan <- SIGNAL
 			//selectCases[id].Dir = reflect.SelectSend
 			//selectCases[id].Send = reflect.ValueOf(make(QueryChan))
 			//prevId = id
-		case event, _ := <-eventChan:
+		case event, _ := <-globalConnEventChan:
 			// wait until transformation finishes
 			switch event {
 			case INCOMING:
@@ -219,8 +215,8 @@ func handleState() { //goroutine only, handles both write and read
 					panic("handleState():written wrong!" + stateToStr[state])
 				}
 			}
-		case <-packagedChan:
-			packagedChan <- state
+		case <-multiChan.RX:
+			multiChan.TX <- state
 		}
 	}
 

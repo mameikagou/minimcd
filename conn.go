@@ -7,32 +7,43 @@ import (
 	"time"
 )
 
-type timeoutConn struct{
+type timeoutConn struct {
 	conn net.Conn
-
 }
-func (c timeoutConn) Read(buf []byte) (int,error) {
-	c.conn.SetDeadline(time.Now().Add(time.Duration(config.ConnectTimeout)*time.Second))
+
+func (c timeoutConn) Read(buf []byte) (int, error) {
+	c.conn.SetDeadline(time.Now().Add(time.Duration(config.ConnectTimeout) * time.Second))
 	return c.conn.Read(buf)
 }
-func (c timeoutConn) Write(buf []byte) (int,error) {
-	c.conn.SetDeadline(time.Now().Add(time.Duration(config.ConnectTimeout)*time.Second))
+func (c timeoutConn) Write(buf []byte) (int, error) {
+	c.conn.SetDeadline(time.Now().Add(time.Duration(config.ConnectTimeout) * time.Second))
 	return c.conn.Write(buf)
 }
 
+type signalChan chan MCState
 
+var signalChanChan = make(chan signalChan)
+
+// 单条管道->多条管道派发器 goroutine only
+var clientSignalChan = NewDynamicMultiChan[MCState](false)
+
+func bridge() {
+	for {
+		msg, _ := <-CriticalSignalChan
+		clientSignalChan.TX <- msg
+	}
+}
 func handle(clientOriginal net.Conn) {
 	client := timeoutConn{clientOriginal}
 	defer clientOriginal.Close()
 	queryChan := make(QueryChan)
-	ChanChan <- queryChan
+	QueryChanChan <- queryChan
 	proceed := func() {
 		server, err := net.Dial("tcp", "127.0.0.1:25565")
 		if err != nil {
 			GetLogger().Errorf("Failed to connect to MC server: %v", err)
 			return
 		}
-		// TODO:better way of setting connection timeout
 		defer server.Close()
 		var wg sync.WaitGroup
 		wg.Add(2)
@@ -61,17 +72,25 @@ func handle(clientOriginal net.Conn) {
 		proceed()
 	case STOPPED, WAITING:
 		//	client.Write([]byte("Server not ready!"))
-		GetLogger().Warnf("Connection queued, server currently at %s state", stateToStr[state])
+		GetLogger().Infof("Connection queued, server currently at %s state", stateToStr[state])
 		CntChan <- INCREASE
 		defer func() { CntChan <- DECREASE }()
-		<-RunningChan
-		proceed()
+		curChan := make(chan MCState)
+		clientSignalChan.Add(curChan)
+		state, _ := <-curChan
+		if state == RUNNING {
+			proceed()
+		} else {
+			client.Write([]byte("You are too late, server dying!"))
+			GetLogger().Warnf("Connection refused, server currently at %s state", stateToStr[state])
+		}
 	default:
 		client.Write([]byte("Server not ready!"))
 		GetLogger().Warnf("Connection refused, server currently at %s state", stateToStr[state])
 	}
 }
 func Listen() {
+	go bridge()
 	listener, _ := net.Listen("tcp", "0.0.0.0:"+config.Port)
 	defer listener.Close()
 	GetLogger().Infof("Listening on %s", config.Port)

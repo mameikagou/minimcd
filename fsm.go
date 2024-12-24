@@ -78,6 +78,7 @@ func stoppingThread() {
 	DaemonChanTX <- struct{}{}
 	<-DaemonChanRX
 	<-DaemonChanRX
+	ConnSignalChan <- STOPPING
 	handleStoppingToStopped()
 }
 func handleStoppingToStopped() {
@@ -91,15 +92,17 @@ func bootingThread() {
 	handleBootingToRunning()
 }
 
+var runningChan chan struct{}
+
 func handleBootingToRunning() {
 	GetLogger().Infof("Server is currently at %s state", stateToStr[RUNNING])
 	state = RUNNING
-	CriticalSignalChan <- RUNNING
+	ConnSignalChan <- RUNNING
 }
 func handleStoppedToBooting() {
 	GetLogger().Infof("Server is currently at %s state", stateToStr[BOOTING])
-	go bootingThread()
 	state = BOOTING
+	bootingThread()
 }
 func waitingThread() {
 	defer close(waitChan)
@@ -203,6 +206,7 @@ func handleState() { //goroutine only, handles both write and read
 				// case BOOTING: //shouldn't be there too
 				case WAITING:
 					handleWaitingToRunning()
+				//case RUNNING:
 				default:
 					panic("handleState():written wrong!" + stateToStr[state])
 				}
@@ -210,7 +214,7 @@ func handleState() { //goroutine only, handles both write and read
 				switch state {
 				case RUNNING:
 					handleRunningToWaiting()
-				case BOOTING:
+				//case BOOTING:
 				default:
 					panic("handleState():written wrong!" + stateToStr[state])
 				}

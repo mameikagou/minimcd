@@ -29,7 +29,7 @@ var clientSignalChan = NewDynamicMultiChan[MCState](false, 2)
 
 func bridge() {
 	for {
-		msg, _ := <-CriticalSignalChan
+		msg, _ := <-ConnSignalChan
 		clientSignalChan.TX <- msg
 	}
 }

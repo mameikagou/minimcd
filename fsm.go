@@ -118,83 +118,12 @@ func waitingThread() {
 	}
 }
 func handleState() { //goroutine only, handles both write and read
-	// unused := NewStack[int]()
-	// const (
-	// 	// CMD must come first
-	// 	CHANCHAN = iota
-	// 	EVENTCHAN
-	// 	SIZE
-	// )
-
-	// selectCases := make([]reflect.SelectCase, 1)
-	//selectCases[CHANCHAN] = reflect.SelectCase{
-	//	Dir:  reflect.SelectRecv, // readonly
-	//	Chan: reflect.ValueOf(QueryChanChan),
-	//}
-	//selectCases[EVENTCHAN] = reflect.SelectCase{
-	//	Dir:  reflect.SelectRecv, // readonly
-	//	Chan: reflect.ValueOf(globalConnEventChan),
-	//}
-	//selectCases[CMDCHAN] = reflect.SelectCase{
-	//	Dir:  reflect.SelectRecv,
-	//	Chan: reflect.ValueOf(cmdChan),
-	//}
-	// packagedChan := make(QueryChan)
-	// selectCases[0] = reflect.SelectCase{
-	// 	Dir:  reflect.SelectRecv,
-	// 	Chan: reflect.ValueOf(packagedChan),
-	// }
-	// addChan := func(Chan QueryChan) {
-	// 	logger.Debug("addChan(): adding new chan from chanchan")
-	// 	nelem := reflect.SelectCase{
-	// 		Dir:  reflect.SelectRecv,
-	// 		Chan: reflect.ValueOf(Chan),
-	// 	}
-	// 	logger.Debug("addChan(): done")
-	// 	if unused.IsEmpty() {
-	// 		selectCases = append(selectCases, nelem)
-	// 	} else {
-	// 		selectCases[unused.Pop()] = nelem
-	// 	}
-	// }
-	// const SIGNAL = 114514
-	// queryThread := func() {
-	// 	prevId := -1
-	// 	for {
-	// 		id, recv, ok := reflect.Select(selectCases)
-	// 		logger.Debugf("queryThread(): recv message from No.%d", id)
-	// 		if prevId != -1 {
-	// 			logger.Debug("queryThread(): clearing previous")
-	// 			selectCases[prevId].Dir = reflect.SelectRecv
-	// 			selectCases[prevId].Send = reflect.Value{}
-	// 			prevId = -1
-	// 		}
-	// 		if !ok {
-	// 			unused.Push(id)
-	// 			continue
-	// 		}
-	// 		if id != 0 {
-	// 			packagedChan <- MCState(recv.Int())
-	// 			state, _ := <-packagedChan
-	// 			selectCases[id].Dir = reflect.SelectSend
-	// 			selectCases[id].Send = reflect.ValueOf(state)
-	// 			prevId = id
-	// 		}
-
-	// 	}
-	// }
-	// go queryThread()
 	logger.Debug("handleState(): ready")
 	multiChan := NewDynamicMultiChan[MCState](true, 1)
 	for {
 		select {
 		case nchan, _ := <-QueryChanChan:
 			multiChan.Add(nchan)
-			//addChan(nchan)
-			// packagedChan <- SIGNAL
-			//selectCases[id].Dir = reflect.SelectSend
-			//selectCases[id].Send = reflect.ValueOf(make(QueryChan))
-			//prevId = id
 		case event, _ := <-globalConnEventChan:
 			// wait until transformation finishes
 			switch event {

@@ -182,7 +182,7 @@ func handleState() { //goroutine only, handles both write and read
 	// }
 	// go queryThread()
 	logger.Debug("handleState(): ready")
-	multiChan := NewDynamicMultiChan[MCState](true)
+	multiChan := NewDynamicMultiChan[MCState](true, 1)
 	for {
 		select {
 		case nchan, _ := <-QueryChanChan:

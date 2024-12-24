@@ -25,7 +25,7 @@ type signalChan chan MCState
 var signalChanChan = make(chan signalChan)
 
 // 单条管道->多条管道派发器 goroutine only
-var clientSignalChan = NewDynamicMultiChan[MCState](false)
+var clientSignalChan = NewDynamicMultiChan[MCState](false, 2)
 
 func bridge() {
 	for {
@@ -37,6 +37,7 @@ func handle(clientOriginal net.Conn) {
 	client := timeoutConn{clientOriginal}
 	defer clientOriginal.Close()
 	queryChan := make(QueryChan)
+	defer close(queryChan)
 	QueryChanChan <- queryChan
 	proceed := func() {
 		server, err := net.Dial("tcp", "127.0.0.1:25565")
@@ -65,7 +66,9 @@ func handle(clientOriginal net.Conn) {
 		wg.Wait()
 		GetLogger().Infof("Connection from %s closed", clientOriginal.RemoteAddr())
 	}
-	switch state {
+	queryChan <- STOPPED
+	st, _ := <-queryChan
+	switch st {
 	case RUNNING:
 		CntChan <- INCREASE
 		defer func() { CntChan <- DECREASE }()
@@ -76,6 +79,7 @@ func handle(clientOriginal net.Conn) {
 		CntChan <- INCREASE
 		defer func() { CntChan <- DECREASE }()
 		curChan := make(chan MCState)
+		defer close(curChan)
 		clientSignalChan.Add(curChan)
 		state, _ := <-curChan
 		if state == RUNNING {

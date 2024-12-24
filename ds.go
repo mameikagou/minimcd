@@ -76,7 +76,7 @@ type DynamicMultiChan[T constraints.Ordered] struct {
 	modify chan modify_t[T]
 }
 
-func NewDynamicMultiChan[T constraints.Ordered](reply bool) *DynamicMultiChan[T] {
+func NewDynamicMultiChan[T constraints.Ordered](reply bool, m int) *DynamicMultiChan[T] {
 	ret := &DynamicMultiChan[T]{
 		TX: make(chan T),
 		RX: make(chan T),
@@ -84,6 +84,7 @@ func NewDynamicMultiChan[T constraints.Ordered](reply bool) *DynamicMultiChan[T]
 		reply:  reply,
 		modify: make(chan modify_t[T]),
 	}
+	mode := m
 	reloadTX := make(chan struct{})
 	reloadRX := make(chan struct{})
 	used := make(map[int]bool)
@@ -91,7 +92,6 @@ func NewDynamicMultiChan[T constraints.Ordered](reply bool) *DynamicMultiChan[T]
 	delta := -1
 	list := make([]chan T, 0)
 	selectCases := make([]reflect.SelectCase, 1)
-
 	go func() {
 		for {
 			modification, _ := <-ret.modify
@@ -99,14 +99,19 @@ func NewDynamicMultiChan[T constraints.Ordered](reply bool) *DynamicMultiChan[T]
 			id := modification.id
 			ch := modification.ch
 			reloadTX <- struct{}{}
-			reloadTX <- struct{}{}
-			<-reloadRX
+			if mode == 2 {
+				reloadTX <- struct{}{}
+			}
 			<-reloadRX // ok it's safe to do operation
+			if mode == 2 {
+				<-reloadRX
+			}
 			switch op {
 			case ADD:
 				nelem := reflect.SelectCase{
 					Dir:  reflect.SelectRecv,
 					Chan: reflect.ValueOf(ch),
+					Send: reflect.Value{},
 				}
 				if len(unused) == 0 {
 					delta = len(list)
@@ -123,16 +128,27 @@ func NewDynamicMultiChan[T constraints.Ordered](reply bool) *DynamicMultiChan[T]
 					used[which] = true
 					delete(unused, which)
 					list[which] = ch
-					selectCases[which] = nelem
+					selectCases[which+1] = nelem
 				}
 			case DELETE:
 				delete(used, id)
 				unused[id] = true
+				list[id] = nil
+				selectCases[id+1] = reflect.SelectCase{
+					Dir:  reflect.SelectRecv,
+					Chan: reflect.ValueOf(NullChan),
+					Send: reflect.Value{},
+				}
+				//deleted <- struct{}{} // <-reloadTX //extra communication
 			}
 			reloadTX <- struct{}{}
-			reloadTX <- struct{}{} //I'm finished
+			if mode == 2 {
+				reloadTX <- struct{}{} //I'm finished
+			}
 			<-reloadRX
-			<-reloadRX //ok I'll cleanup
+			if mode == 2 {
+				<-reloadRX //ok I'll cleanup
+			}
 			delta = -1
 		}
 	}()
@@ -153,45 +169,53 @@ func NewDynamicMultiChan[T constraints.Ordered](reply bool) *DynamicMultiChan[T]
 				// ret.used.Push(id)
 				//
 				// delete(used, id)
-				ret.modify <- modify_t[T]{DELETE, id, nil}
+				ret.modify <- modify_t[T]{DELETE, id - 1, nil}
+				<-reloadTX
+				reloadRX <- struct{}{} //I'm currently not dealing with other chan
+				<-reloadTX             //waiting for you finished
+				reloadRX <- struct{}{} //I've read all deltas, you can release them
 				continue
 			}
-			if id != 0 {
+			if mode == 1 && id != 0 {
 				ret.RX <- To[T](recv) // possible for below to send to Chan?
-				if reply {
+				if ret.reply {
 					msg, _ := <-ret.TX
 					selectCases[id].Dir = reflect.SelectSend
 					selectCases[id].Send = reflect.ValueOf(msg)
 					prevId = id
 				}
-			} else {
+			} else if id == 0 {
 				reloadRX <- struct{}{} //I'm currently not dealing with other chan
 				<-reloadTX             //waiting for you finished
 				reloadRX <- struct{}{} //I've read all deltas, you can release them
 			}
 		}
 	}()
-	go func() {
-		msgList := make([]T, 0)
-		for {
-			select {
-			case <-reloadTX:
-				reloadRX <- struct{}{} //I'm currently not dealing with other chan
-				<-reloadTX             //waiting for you finished
-				if delta != -1 {
-					for _, x := range msgList {
-						list[delta] <- x
+	if mode == 2 {
+		go func() {
+			msgList := make([]T, 0)
+			for {
+				select {
+				case <-reloadTX:
+					reloadRX <- struct{}{} //I'm currently not dealing with other chan
+					<-reloadTX             //waiting for you finished
+					if delta != -1 {
+						for _, x := range msgList {
+							list[delta] <- x
+						}
 					}
+					reloadRX <- struct{}{} //I've read all deltas, you can release them
+				case msg, _ := <-ret.TX:
+					for id, ch := range list {
+						if used[id] {
+							ch <- msg
+						}
+					}
+					msgList = append(msgList, msg)
 				}
-				reloadRX <- struct{}{} //I've read all deltas, you can release them
-			case msg, _ := <-ret.TX:
-				for _, ch := range list {
-					ch <- msg
-				}
-				msgList = append(msgList, msg)
 			}
-		}
-	}()
+		}()
+	}
 	return ret
 }
 func (self DynamicMultiChan[T]) IsReply() bool {
